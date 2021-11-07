@@ -1,0 +1,322 @@
+// Problemy (1) : dt wpływa na czas trwania symulacji
+
+#include <iostream>
+#include <map>
+#include <string>
+#include <random>
+#include <fstream>
+
+using namespace std;
+
+// zadania :
+// tworzymy wykres ilości atomów każdego izotopu od czasu, przy czym ten kod nie tworzy wykresu, tylko plik z danymi do stworzenia wykresu
+// na podstawie wykresu ustalamy, jaki był izotop początkowy, oraz
+// szukamy takiego czasu T od chwili początkowej, że prawie wszystkie jądra początkowe uległy rozpadowi, i że w słoiku znajdują się 3 różne izotopy w ilościach w przybliżeniu równych
+
+// podane w treści zadania czasy połowicznego rozpadu w minutach, chyba że zaznaczono inaczej
+map<string, double> T12 = {
+	{ "218Po", 3.05 },
+	{ "214Pb", 26.8 },
+	{ "214Bi", 19.7 },
+	{ "214Po", DBL_EPSILON}, // przyjmujemy, że rozpad zachodzi natychmiast
+	{ "210Pb", (double)INFINITY}, // przyjmujemy, że jest to izotop trwały, stąd nieskończoność
+	{ "211Pb", 36.1 },
+	{ "211Bi", 2.14 },
+	{ "207Tl", 4.77 },
+	{ "207Pb", (double)INFINITY} // przyjmujemy, że jest to izotop trwały, stąd nieskończoność
+};
+
+// reprezentuje podane w treści zadania szeregi szeregi rozpadów uranowo-radowy (218Po do 210Pb) i uranowo-aktynowy (211Pb do 207Pb)
+map<string, string> chains = {
+	{ "218Po", "214Pb" },
+	{ "214Pb", "214Bi" },
+//	{ "214Bi", "214Po" },
+//	{ "214Po", "210Pb" },
+	{ "214Bi", "210Pb" }, // pomijamy 214Po bo przyjmujemy, że rozpada się natychmiastowo
+	{ "211Pb", "211Bi" },
+	{ "211Bi", "207Tl" },
+	{ "207Tl", "207Pb" }
+};
+
+// prawdopodobieństwo rozpadu jądra izotopu iso, zgodnie z podanym w treści zadania wzorem p(t) = 1 - (1/2)^(t/T12), gdzie t odpowiada parametrowi t, a T12 to okres połowicznego rozpadu izotopu iso
+double p(double t, string iso)
+{
+	return (double)1 - pow(0.5, t / T12[iso]);
+}
+// równoważne
+double t(double p, string iso)
+{
+	return -T12[iso] * log2((double)1 - p);
+}
+
+const int N0 = 100; // początkowa liczba atomów w słoiku
+//const double dt = 0.001; // zmiana czasu
+
+// zwraca wartość true jeśli wszystkie atomy w słoiku rozpadły się do izotopów, które uznajemy za trwałe
+// w przeciwnym razie, czyli jeśli znalezione zostanie jądro inne niż 210Pb dla szeregu uranowo-radowego (ura == true) lub 207Pb dla szeregu uranowo-aktynowego (ura == false), zwraca wartość false
+/*bool end(string ar[], bool ura)
+{
+	if (ura)
+	{
+		for (int i = 0; i < N0; i++)
+		{
+			if (ar[i] != "210Pb")
+			{
+				return false;
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < N0; i++)
+		{
+			if (ar[i] != "207Pb")
+			{
+				return false;
+			}
+		}
+	}
+
+	return true;
+}*/
+
+// tworzy linijkę tekstu do zapisania w pliku z wynikami symulacji
+// ar reprezentuje słoik z atomami
+// t reprezentuje czas od początku symulacji
+// ura rozróżnia symulowany szereg
+/*string written(string ar[], double t, bool ura)
+{
+	string ret;
+
+	string t_str = std::to_string(t);
+	t_str = t_str.substr(0, t_str.find('.') + 5);
+
+	string ar_str;
+	if (ura)
+	{
+		int count[5] = { };
+		for (int i = 0; i < N0; i++)
+		{
+			if (ar[i] == "218Po")
+			{
+				count[0]++;
+			}
+			else if (ar[i] == "214Pb")
+			{
+				count[1]++;
+			}
+			else if (ar[i] == "214Bi")
+			{
+				count[2]++;
+			}
+			else if (ar[i] == "214Po")
+			{
+				count[3]++;
+			}
+			else
+			{
+				count[4]++;
+			}
+		}
+		ar_str = "218Po: " + to_string(count[0]) + ", 214Pb: " + to_string(count[1]) + ", 214Bi : " + to_string(count[2]) + ", 214Po: " + to_string(count[3]) + ", 210Pb: " + to_string(count[4]);
+	}
+	else
+	{
+		int count[4] = { };
+		for (int i = 0; i < N0; i++)
+		{
+			if (ar[i] == "211Pb")
+			{
+				count[0]++;
+			}
+			else if (ar[i] == "211Bi")
+			{
+				count[1]++;
+			}
+			else if (ar[i] == "207Tl")
+			{
+				count[2]++;
+			}
+			else
+			{
+				count[3]++;
+			}
+		}
+		ar_str = "211Pb: " + to_string(count[0]) + ", 211Bi: " + to_string(count[1]) + ", 207Tl: " + to_string(count[2]) + ", 207Pb: " + to_string(count[3]);
+	}
+
+	return t_str + "   " + ar_str + "\n";
+}*/
+
+void write(map<string, float> m[], string filename) // zapisanie wyników do pliku
+{
+	ofstream file;
+	file.open(filename);
+
+	double time = 0;
+	int decayed;
+
+	do
+	{
+		string t_str = std::to_string(time);
+		t_str = t_str.substr(0, t_str.find('.') + 2);
+		int i1 = 0, i2 = 0, i3 = 0, i4 = 0;
+		decayed = 0;
+
+		if (m[0].count("218Po"))
+		{
+			for (int i = 0; i < N0; i++)
+			{
+				if (time < m[i]["218Po"])
+				{
+					i1++;
+				}
+				else if (time < m[i]["218Po"] + m[i]["214Pb"])
+				{
+					i2++;
+				}
+				else if (time < m[i]["218Po"] + m[i]["214Pb"] + m[i]["214Bi"])
+				{
+					i3++;
+				}
+				else
+				{
+					i4++;
+					decayed++;
+				}
+			}
+
+			file << t_str + " 218Po: " + to_string(i1) + " 214Pb: " + to_string(i2) + " 214Bi: " + to_string(i3) + " 214Po: 0 210Pb: " + to_string(i4) + "\n";
+		}
+		else
+		{
+			for (int i = 0; i < N0; i++)
+			{
+				if (time < m[i]["211Pb"])
+				{
+					i1++;
+				}
+				else if (time < m[i]["211Pb"] + m[i]["211Bi"])
+				{
+					i2++;
+				}
+				else if (time < m[i]["211Pb"] + m[i]["211Bi"] + m[i]["207Tl"])
+				{
+					i3++;
+				}
+				else
+				{
+					i4++;
+					decayed++;
+				}
+			}
+
+			file << t_str + " 211Pb: " + to_string(i1) + " 211Bi: " + to_string(i2) + " 207Tl: " + to_string(i3) + " 207Pb: " + to_string(i4) + "\n";
+		}
+
+		time += 0.1;
+	} while (decayed < N0);//(!end(current, true));
+
+	file.close();
+}
+
+int main()
+{
+	//double t; // czas od chwili początkowej w minutach
+	//string current[N0] = { }; // słoik z atomami
+
+	// każde wywołanie rng(mt) powinno zwrócić losową liczbę z przedziału [0, 1), ale istnieje błąd w wyniku którego możliwe jest zwrócenie (w tym przypadku) 1, co jednak nie ma wpływu na wynik symulacji
+	// zdecydowałem się na użycie tego sposobu zamiast rand() ponieważ rand() zwraca liczbę całkowitą z przedziału [0, RAND_MAX]
+	// wartość RAND_MAX może różnić się w zależności od implementacji, ale nie zmienia to tego, że rand() / RAND_MAX może zwrócić tylko określone wartości
+	// dla RAND_MAX równego 32767 : 0/32768, 1/32768, 2/32768, ..., 32767/32768
+	// co gorsza, po wywołaniu rand() RAND_MAX razy, liczby zaczynają się powtarzać
+	// rng(mt) nie ma tych problemów
+	// w poniższych pętlach p(t, current[i]) oznacza prawdopodobieństwo rozpadu jądra current[i] w chwili t
+	// jeśli rng(mt) < p(t, current[i]), to rozpad zachodzi
+	random_device rd;
+	mt19937 mt(rd());
+	uniform_real_distribution<> rng(0.0, 1.0);
+
+	for (int i = 0; i < 5; i++) // symulacje szeregu uranowo-radowego
+	{
+		map<string, float> results[N0] = {};
+		for (int i = 0; i < N0; i++)
+		{
+			results[i] = {
+				{ "218Po", t(rng(mt), "218Po") },
+				{ "214Pb", t(rng(mt), "214Pb") },
+				{ "214Bi", t(rng(mt), "214Bi") },
+			//	{ "214Po", 0 },
+				{ "210Pb", (double)INFINITY }
+			};
+		}
+		write(results, "uran_rad_" + to_string(i + 1) + ".txt");
+
+		/*// reset symulacji
+		t = 0;
+		for (int i = 0; i < N0; i++)
+		{
+			current[i] = "218Po";
+		}
+
+		// dla każdego jądra sprawdzamy czy się rozpadło, zachodzi to dopóki nie rozpadły się wszystkie jądra
+		do
+		{
+			for (int i = 0; i < N0; i++)
+			{
+				if (rng(mt) < p(t, current[i]))
+				{
+					current[i] = chains[current[i]];
+				}
+			}
+
+			file << written(current, t, true); // dodanie nowej linijki do pliku
+
+			t += dt; // przejście do nowej chwili
+		} while (!end(current, true));*/
+	}
+	for (int i = 0; i < 5; i++) // symulacje szeregu uranowo-aktynowego
+	{
+		//ofstream file;
+		//file.open("uran_aktyn_" + to_string(i + 1) + ".txt");
+
+		map<string, float> results[N0] = {};
+		for (int i = 0; i < N0; i++)
+		{
+			results[i] = {
+				{ "211Pb", t(rng(mt), "211Pb") },
+				{ "211Bi", t(rng(mt), "211Bi") },
+				{ "207Tl", t(rng(mt), "207Tl") },
+				{ "207Pb", (double)INFINITY }
+			};
+		}
+		write(results, "uran_aktyn_" + to_string(i + 1) + ".txt");
+
+		/*// reset symulacji
+		t = 0;
+		for (int i = 0; i < N0; i++)
+		{
+			current[i] = "211Pb";
+		}
+
+		// dla każdego jądra sprawdzamy czy się rozpadło, zachodzi to dopóki nie rozpadły się wszystkie jądra
+		do
+		{
+			for (int i = 0; i < N0; i++)
+			{
+				if (rng(mt) < p(t, current[i]))
+				{
+					current[i] = chains[current[i]];
+				}
+			}
+
+			file << written(current, t, false); // dodanie nowej linijki do pliku
+
+			t += dt; // przejście do nowej chwili
+		} while (!end(current, false));*/
+
+		//file.close(); // zapisanie pliku
+	}
+
+	return 0;
+}
