@@ -27,7 +27,7 @@ double t(double p, string iso)
 }
 
 const int N0 = 100; // pocz¹tkowa liczba atomów w s³oiku
-double dt = 0.1; // krok czasowy w minutach
+const double dt = 0.1; // krok czasowy w minutach
 
 void write(float m[N0][4], string filename) // zapisanie wyników do pliku
 {
